@@ -2,30 +2,6 @@
 #
 # fff - fucking fast file-manager.
 
-get_os() {
-    # Figure out the current operating system to set some specific variables.
-    # '$OSTYPE' typically stores the name of the OS kernel.
-    case $OSTYPE in
-        # Mac OS X / macOS.
-        darwin*)
-            opener=open
-            file_flags=bIL
-        ;;
-
-        haiku)
-            opener=open
-
-            [[ -z $FFF_TRASH_CMD ]] &&
-                FFF_TRASH_CMD=trash
-
-            [[ $FFF_TRASH_CMD == trash ]] && {
-                FFF_TRASH=$(finddir -v "$PWD" B_TRASH_DIRECTORY)
-                mkdir -p "$FFF_TRASH"
-            }
-        ;;
-    esac
-}
-
 setup_terminal() {
     # Setup the terminal for the TUI.
     # '\e[?1049h': Use alternative screen buffer.
@@ -143,17 +119,6 @@ get_ls_colors() {
     export "${ls_cols[@]}" &>/dev/null
 }
 
-get_w3m_path() {
-    # Find the path to the w3m-img library.
-    w3m_paths=(/usr/{pkg/,}{local/,}{bin,lib,libexec,lib64,libexec64}/w3m/w3mi*)
-    read -r w3m _ < <(type -p "$FFF_W3M_PATH" w3mimgdisplay "${w3m_paths[@]}")
-}
-
-get_mime_type() {
-    # Get a file's mime_type.
-    mime_type=$(file "-${file_flags:-biL}" "$1" 2>/dev/null)
-}
-
 status_line() {
     # Status_line to print when files are marked for operation.
     local mark_ui="[${#marked_files[@]}] selected (${file_program[*]}) [p] ->"
@@ -212,6 +177,7 @@ read_dir() {
     done
 
     list=("${dirs[@]}" "${files[@]}")
+    # [[ $PWD == /home/sharad/Downloads ]] && list="$(ls -t | xargs |tr ' ' '\n')"
 
     # Indicate that the directory is empty.
     [[ -z ${list[0]} ]] &&
@@ -361,91 +327,6 @@ draw_dir() {
     ((y=scroll_new_pos))
 }
 
-draw_img() {
-    # Draw an image file on the screen using w3m-img.
-    # We can use the framebuffer; set win_info_cmd as appropriate.
-    [[ $(tty) == /dev/tty[0-9]* && -w /dev/fb0 ]] &&
-        win_info_cmd=fbset
-
-    # X isn't running and we can't use the framebuffer, do nothing.
-    [[ -z $DISPLAY && $win_info_cmd != fbset ]] &&
-        return
-
-    # File isn't an image file, do nothing.
-    get_mime_type "${list[scroll]}"
-    [[ $mime_type != image/* ]] &&
-        return
-
-    # w3m-img isn't installed, do nothing.
-    type -p "$w3m" &>/dev/null || {
-        cmd_line "error: Couldn't find 'w3m-img', is it installed?"
-        return
-    }
-
-    # $win_info_cmd isn't installed, do nothing.
-    type -p "${win_info_cmd:=xdotool}" &>/dev/null || {
-        cmd_line "error: Couldn't find '$win_info_cmd', is it installed?"
-        return
-    }
-
-    # Get terminal window size in pixels and set it to WIDTH and HEIGHT.
-    if [[ $win_info_cmd == xdotool ]]; then
-        IFS=$'\n' read -d "" -ra win_info \
-            < <(xdotool getactivewindow getwindowgeometry --shell)
-
-        declare "${win_info[@]}" &>/dev/null || {
-            cmd_line "error: Failed to retrieve window size."
-            return
-        }
-    else
-        [[ $(fbset --show) =~ .*\"([0-9]+x[0-9]+)\".* ]]
-        IFS=x read -r WIDTH HEIGHT <<< "${BASH_REMATCH[1]}"
-    fi
-
-    # Get the image size in pixels.
-    read -r img_width img_height < <("$w3m" <<< "5;${list[scroll]}")
-
-    # Subtract the status_line area from the image size.
-    ((HEIGHT=HEIGHT-HEIGHT*5/LINES))
-
-    ((img_width > WIDTH)) && {
-        ((img_height=img_height*WIDTH/img_width))
-        ((img_width=WIDTH))
-    }
-
-    ((img_height > HEIGHT)) && {
-        ((img_width=img_width*HEIGHT/img_height))
-        ((img_height=HEIGHT))
-    }
-
-    clear_screen
-    status_line "${list[scroll]}"
-
-    # Add a small delay to fix issues in VTE terminals.
-    ((BASH_VERSINFO[0] > 3)) &&
-        read "${read_flags[@]}" -srn 1
-
-    # Display the image.
-    printf '0;1;%s;%s;%s;%s;;;;;%s\n3;\n4\n' \
-        "${FFF_W3M_XOFFSET:-0}" \
-        "${FFF_W3M_YOFFSET:-0}" \
-        "$img_width" \
-        "$img_height" \
-        "${list[scroll]}" | "$w3m" &>/dev/null
-
-    # Wait for user input.
-    read -ern 1
-
-    # Clear the image.
-    printf '6;%s;%s;%s;%s\n3;' \
-        "${FFF_W3M_XOFFSET:-0}" \
-        "${FFF_W3M_YOFFSET:-0}" \
-        "$WIDTH" \
-        "$HEIGHT" | "$w3m" &>/dev/null
-
-    redraw
-}
-
 redraw() {
     # Redraw the current window.
     # If 'full' is passed, re-fetch the directory list.
@@ -492,6 +373,10 @@ mark() {
         printf '\e[K'
         print_line "$1"
     fi
+
+	## by sharad, copy last marked file-path to clipboard
+	echo ${marked_files[$1]} | wl-copy &> /dev/null
+	echo ${marked_files[$1]} | xclip -i -selection clipboard &> /dev/null
 
     # Find the program to use.
     case "$2" in
@@ -592,36 +477,11 @@ open() {
         redraw full
 
     elif [[ -f $1 ]]; then
-        # Figure out what kind of file we're working with.
-        get_mime_type "$1"
-
-        # Open all text-based files in '$EDITOR'.
-        # Everything else goes through 'xdg-open'/'open'.
-        case "$mime_type" in
-            text/*|*x-empty*|*json*)
-                # If 'fff' was opened as a file picker, save the opened
-                # file in a file called 'opened_file'.
-                ((file_picker == 1)) && {
-                    printf '%s\n' "$1" > \
-                        "${XDG_CACHE_HOME:=${HOME}/.cache}/fff/opened_file"
-                    exit
-                }
-
-                clear_screen
-                reset_terminal
-                "${VISUAL:-${EDITOR:-vi}}" "$1"
-                setup_terminal
-                redraw
-            ;;
-
-            *)
-                # 'nohup':  Make the process immune to hangups.
-                # '&':      Send it to the background.
-                # 'disown': Detach it from the shell.
-                nohup "${FFF_OPENER:-${opener:-xdg-open}}" "$1" &>/dev/null &
-                disown
-            ;;
-        esac
+        clear_screen
+        reset_terminal
+        opener "$1"
+        setup_terminal
+        redraw
     fi
 }
 
@@ -887,6 +747,15 @@ key() {
         ${FFF_KEY_LINK:=s}|\
         ${FFF_KEY_BULK_RENAME:=b})
             mark "$scroll" "$1"
+            ((scroll < list_total)) && {
+                ((scroll++))
+                ((y < max_items)) && ((y++))
+
+                print_line "$((scroll-1))"
+                printf '\n'
+                print_line "$scroll"
+                status_line
+            }
         ;;
 
         # Mark all files for operation.
@@ -1126,9 +995,7 @@ main() {
     # Trap the window resize signal (handle window resize events).
     trap 'get_term_size; redraw' WINCH
 
-    get_os
     get_term_size
-    get_w3m_path
     setup_options
     setup_terminal
     redraw full
