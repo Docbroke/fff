@@ -162,11 +162,19 @@ read_dir() {
     # If '$PWD' is '/', unset it to avoid '//'.
     [[ $PWD == / ]] && PWD=
 
+## FOR DOWoNLOADS
+#	xx=$PWD/*
+#	[[ $PWD == ~/home/Downloads ]] && \
+#		IFS=$'\n'
+#		xx="$(for item in "$PWD"/*; do stat -c '%W=%n' "$item"; done | sort -nr | cut -d '=' -f2)"
+#		unset IFS
+
+##
+
     for item in "$PWD"/*; do
+   # for item in "$xx"; do
         if [[ -d $item ]]; then
             dirs+=("$item")
-            IFS=$'\n' dirs=($(sort -V <<<"${dirs[*]}"))
-            unset IFS
 
             # Find the position of the child directory in the
             # parent directory list.
@@ -175,10 +183,15 @@ read_dir() {
             ((item_index++))
         else
             files+=("$item")
-            IFS=$'\n' files=($(sort -V <<<"${files[*]}"))
-            unset IFS
         fi
     done
+
+	## Natural Sorting of Numbers
+    IFS=$'\n' 
+    	dirs=($(sort -V <<<"${dirs[*]}"))
+    	files=($(sort -V <<<"${files[*]}"))
+    unset IFS
+    
     list=("${dirs[@]}" "${files[@]}")
 
     # Indicate that the directory is empty.
