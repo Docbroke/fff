@@ -182,6 +182,7 @@ read_dir() {
     	dirs=($(sort -V <<<"${dirs[*]}"))
     	files=($(sort -V <<<"${files[*]}"))
 	[[ $PWD == ~/Downloads* ]] && \
+		dirs=($(stat -c '%Y=%n' "${dirs[@]}" | sort -nr | cut -d '=' -f2))
 		files=($(stat -c '%Y=%n' "${files[@]}" | sort -nr | cut -d '=' -f2))
     unset IFS
     
