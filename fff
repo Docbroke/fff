@@ -162,15 +162,6 @@ read_dir() {
     # If '$PWD' is '/', unset it to avoid '//'.
     [[ $PWD == / ]] && PWD=
 
-## FOR DOWoNLOADS
-#	xx=$PWD/*
-#	[[ $PWD == ~/home/Downloads ]] && \
-#		IFS=$'\n'
-#		xx="$(for item in "$PWD"/*; do stat -c '%W=%n' "$item"; done | sort -nr | cut -d '=' -f2)"
-#		unset IFS
-
-##
-
     for item in "$PWD"/*; do
    # for item in "$xx"; do
         if [[ -d $item ]]; then
@@ -186,10 +177,12 @@ read_dir() {
         fi
     done
 
-	## Natural Sorting of Numbers
+## Natural Sorting of Numbers and sort by time in downloads directories
     IFS=$'\n' 
     	dirs=($(sort -V <<<"${dirs[*]}"))
     	files=($(sort -V <<<"${files[*]}"))
+	[[ $PWD == ~/Downloads* ]] && \
+		files=($(stat -c '%Y=%n' "${files[@]}" | sort -nr | cut -d '=' -f2))
     unset IFS
     
     list=("${dirs[@]}" "${files[@]}")
