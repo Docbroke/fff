@@ -390,8 +390,15 @@ mark() {
     # Find the program to use.
     case "$2" in
         # ${FFF_KEY_YANK:=y}|${FFF_KEY_YANK_ALL:=Y}) file_program=(cp -iR) ;;
-        ${FFF_KEY_YANK:=y}|${FFF_KEY_YANK_ALL:=Y}) file_program=(rsync -avP --links --safe-links) ;;
-        ${FFF_KEY_MOVE:=m}|${FFF_KEY_MOVE_ALL:=M}) file_program=(rsync -avP --links --safe-links --remove-source-files)  ;;
+        ${FFF_KEY_YANK:=y}|${FFF_KEY_YANK_ALL:=Y}) 
+        	type rsync &> /dev/null && \
+        	file_program=(rsync -avP --links --safe-links) || \
+        	file_program=(cp -iR)
+        	;;
+        ${FFF_KEY_MOVE:=m}|${FFF_KEY_MOVE_ALL:=M}) 
+        	type rsync &> /dev/null && \
+        	file_program=(rsync -avP --links --safe-links --remove-source-files) || \
+        	file_program=(mv -i)  ;;
         ${FFF_KEY_LINK:=s}|${FFF_KEY_LINK_ALL:=S}) file_program=(ln -s)  ;;
 
         # These are 'fff' functions.
@@ -846,7 +853,8 @@ key() {
         ;;
 
         # Show file attributes.
-        ${FFF_KEY_ATTRIBUTES:=x})
+        # ${FFF_KEY_ATTRIBUTES:=x})
+        i)
             [[ -e "${list[scroll]}" ]] && {
                 clear_screen
                 status_line "${list[scroll]}"
@@ -856,8 +864,21 @@ key() {
             }
         ;;
 
+        ## run du/ncdu to get sizes
+        u)
+            [[ -e "${list[scroll]}" ]] && {
+                clear_screen
+                reset_terminal
+                status_line "${list[scroll]}"
+                type ncdu &> /dev/null && ncdu "${list[scroll]}" || du "${list[scroll]}"
+                setup_terminal
+                redraw
+            }
+        ;;
+
         # Toggle executable flag.
-        ${FFF_KEY_EXECUTABLE:=X})
+        # ${FFF_KEY_EXECUTABLE:=X})
+        x)
             [[ -f ${list[scroll]} && -w ${list[scroll]} ]] && {
                 if [[ -x ${list[scroll]} ]]; then
                     chmod -x "${list[scroll]}"
@@ -869,13 +890,9 @@ key() {
             }
         ;;
 
-        # Show image in terminal.
-        ${FFF_KEY_IMAGE:=i})
-            draw_img
-        ;;
-
         # Go to dir.
-        ${FFF_KEY_GO_DIR:=:})
+        # ${FFF_KEY_GO_DIR:=:})
+        :|\;)
             cmd_line "go to dir: " "dirs"
 
             # Let 'cd' know about the current directory.
