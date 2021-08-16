@@ -81,7 +81,7 @@ get_ls_colors() {
     # Parse the LS_COLORS variable and declare each file type
     # as a separate variable.
     # Format: ':.ext=0;0:*.jpg=0;0;0:*png=0;0;0;0:'
-    [[ -z $LS_COLORS ]] && {
+    [[ $LS_COLORS ]] || {
         FFF_LS_COLORS=0
         return
     }
@@ -163,7 +163,6 @@ read_dir() {
     [[ $PWD == / ]] && PWD=
 
     for item in "$PWD"/*; do
-   # for item in "$xx"; do
         if [[ -d $item ]]; then
             dirs+=("$item")
 
@@ -177,10 +176,10 @@ read_dir() {
         fi
     done
 
-## Natural Sorting of Numbers and sort by time in downloads directories
+	## Natural Sorting of Numbers (still hacky) & sort by time in downloads dirs
     IFS=$'\n' 
-    	dirs=($(sort -V <<<"${dirs[*]}"))
-    	files=($(sort -V <<<"${files[*]}"))
+#    	dirs=($(sort -V <<<"${dirs[*]}"))
+#    	files=($(sort -V <<<"${files[*]}"))
 	if [[ $PWD == ~/Downloads* ]]; then
 		dirs=($(stat -c '%Y=%n' "${dirs[@]}" | sort -nr | cut -d '=' -f2))
 		files=($(stat -c '%Y=%n' "${files[@]}" | sort -nr | cut -d '=' -f2))
@@ -385,13 +384,14 @@ mark() {
     fi
 
 	## by sharad, copy last marked file-path to clipboard
-	echo ${marked_files[$1]} | wl-copy &> /dev/null
-	echo ${marked_files[$1]} | xclip -i -selection clipboard &> /dev/null
+	echo ${marked_files[@]} | wl-copy &> /dev/null
+	echo ${marked_files[@]} | xclip -i -selection clipboard &> /dev/null
 
     # Find the program to use.
     case "$2" in
-        ${FFF_KEY_YANK:=y}|${FFF_KEY_YANK_ALL:=Y}) file_program=(cp -iR) ;;
-        ${FFF_KEY_MOVE:=m}|${FFF_KEY_MOVE_ALL:=M}) file_program=(mv -i)  ;;
+        # ${FFF_KEY_YANK:=y}|${FFF_KEY_YANK_ALL:=Y}) file_program=(cp -iR) ;;
+        ${FFF_KEY_YANK:=y}|${FFF_KEY_YANK_ALL:=Y}) file_program=(rsync -avP --links --safe-links) ;;
+        ${FFF_KEY_MOVE:=m}|${FFF_KEY_MOVE_ALL:=M}) file_program=(rsync -avP --links --safe-links --remove-source-files)  ;;
         ${FFF_KEY_LINK:=s}|${FFF_KEY_LINK_ALL:=S}) file_program=(ln -s)  ;;
 
         # These are 'fff' functions.
@@ -399,7 +399,7 @@ mark() {
             file_program=(trash)
         ;;
 
-        ${FFF_KEY_BULK_RENAME:=b}|${FFF_KEY_BULK_RENAME_ALL:=B})
+        ${FFF_KEY_BULK_RENAME:=r}|${FFF_KEY_BULK_RENAME_ALL:=R})
             file_program=(bulk_rename)
         ;;
     esac
@@ -409,29 +409,12 @@ mark() {
 
 trash() {
     # Trash a file.
-    cmd_line "trash [${#marked_files[@]}] items? [y/n]: " y n
+    cmd_line "Remove [${#marked_files[@]}] items PERMANENTLY ?  [y/n]: " y n
 
     [[ $cmd_reply != y ]] &&
         return
 
-    if [[ $FFF_TRASH_CMD ]]; then
-        # Pass all but the last argument to the user's
-        # custom script. command is used to prevent this function
-        # from conflicting with commands named "trash".
-        command "$FFF_TRASH_CMD" "${@:1:$#-1}"
-
-    else
-        cd "$FFF_TRASH" || cmd_line "error: Can't cd to trash directory."
-
-        if cp -alf "$@" &>/dev/null; then
             rm -r "${@:1:$#-1}"
-        else
-            mv -f "$@"
-        fi
-
-        # Go back to where we were.
-        cd "$OLDPWD" ||:
-    fi
 }
 
 bulk_rename() {
@@ -755,7 +738,7 @@ key() {
         ${FFF_KEY_MOVE:=m}|\
         ${FFF_KEY_TRASH:=d}|\
         ${FFF_KEY_LINK:=s}|\
-        ${FFF_KEY_BULK_RENAME:=b})
+        ${FFF_KEY_BULK_RENAME:=r})
             mark "$scroll" "$1"
             ((scroll < list_total)) && {
                 ((scroll++))
@@ -768,12 +751,12 @@ key() {
             }
         ;;
 
-        # Mark all files for operation.
+        # Mark all files for operation., BULK RENAM ALL changed to 'F2' from B to avoid conflict
         ${FFF_KEY_YANK_ALL:=Y}|\
         ${FFF_KEY_MOVE_ALL:=M}|\
         ${FFF_KEY_TRASH_ALL:=D}|\
         ${FFF_KEY_LINK_ALL:=S}|\
-        ${FFF_KEY_BULK_RENAME_ALL:=B})
+        ${FFF_KEY_BULK_RENAME_ALL:=R})
             mark all "$1"
         ;;
 
@@ -809,7 +792,7 @@ key() {
         ;;
 
         # Rename list item.
-        ${FFF_KEY_RENAME:=r})
+        ${FFF_KEY_RENAME:=$'\eOQ'})
             [[ ! -e ${list[scroll]} ]] &&
                 return
 
@@ -908,12 +891,6 @@ key() {
             open ~
         ;;
 
-        # Go to trash.
-        ${FFF_KEY_GO_TRASH:=t})
-            get_os
-            open "$FFF_TRASH"
-        ;;
-
         # Go to previous dir.
         ${FFF_KEY_PREVIOUS:=-})
             open "$OLDPWD"
@@ -969,11 +946,6 @@ main() {
         exit
     }
 
-    # Store file name in a file on open instead of using 'FFF_OPENER'.
-    # Used in 'fff.vim'.
-    [[ $1 == -p ]] &&
-        file_picker=1
-
     # bash 5 and some versions of bash 4 don't allow SIGWINCH to interrupt
     # a 'read' command and instead wait for it to complete. In this case it
     # causes the window to not redraw on resize until the user has pressed
@@ -992,8 +964,7 @@ main() {
         shopt -s dotglob
 
     # Create the trash and cache directory if they don't exist.
-    mkdir -p "${XDG_CACHE_HOME:=${HOME}/.cache}/fff" \
-             "${FFF_TRASH:=${XDG_DATA_HOME:=${HOME}/.local/share}/fff/trash}"
+    mkdir -p "${XDG_CACHE_HOME:=${HOME}/.cache}/fff"
 
     # 'nocaseglob': Glob case insensitively (Used for case insensitive search).
     # 'nullglob':   Don't expand non-matching globs to themselves.
