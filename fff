@@ -479,7 +479,7 @@ open() {
     elif [[ -f $1 ]]; then
         clear_screen
         reset_terminal
-        opener "$1"
+        opener -d "$1"
         setup_terminal
         redraw
     fi
@@ -622,6 +622,14 @@ key() {
         ${FFF_KEY_CHILD4:=$'\eOC'})
             open "${list[scroll]}"
         ;;
+
+        o)
+        	clear_screen
+        	reset_terminal
+        	opener "${list[scroll]}"
+        	setup_terminal
+        	redraw
+		;;
 
         # Go to the parent directory.
         # 'D' is what bash sees when the left arrow is pressed
@@ -818,33 +826,20 @@ key() {
                 fi
         ;;
 
-        # Create a directory.
-        ${FFF_KEY_MKDIR:=n})
-            cmd_line "mkdir: " "dirs"
-
-            [[ $cmd_reply ]] &&
+        # Create new file or directory.
+        # ${FFF_KEY_MKDIR:=n})
+        n)
+            # cmd_line "mkdir: " "dirs"
+            cmd_line "create new file/directory: " "dirs"
+			# [[ $cmd_reply == */ ]] && newcmd="mkdir -p" || newcmd=">"
+            # [[ $cmd_reply ]] &&
                 if [[ -e $cmd_reply ]]; then
                     cmd_line "warn: '$cmd_reply' already exists."
 
                 elif [[ -w $PWD ]]; then
-                    mkdir -p "${PWD}/${cmd_reply}"
-                    redraw full
-
-                else
-                    cmd_line "warn: no write access to dir."
-                fi
-        ;;
-
-        # Create a file.
-        ${FFF_KEY_MKFILE:=f})
-            cmd_line "mkfile: "
-
-            [[ $cmd_reply ]] &&
-                if [[ -e $cmd_reply ]]; then
-                    cmd_line "warn: '$cmd_reply' already exists."
-
-                elif [[ -w $PWD ]]; then
-                    : > "$cmd_reply"
+                    [[ $cmd_reply == */ ]] && \
+                    	mkdir -p "${PWD}/${cmd_reply}" || \
+                    	: > "$cmd_reply" 
                     redraw full
 
                 else
@@ -892,7 +887,7 @@ key() {
 
         # Go to dir.
         # ${FFF_KEY_GO_DIR:=:})
-        :|\;)
+        \;)
             cmd_line "go to dir: " "dirs"
 
             # Let 'cd' know about the current directory.
@@ -902,7 +897,16 @@ key() {
                 cd "${cmd_reply/\~/$HOME}" &>/dev/null &&
                     open "$PWD"
         ;;
+        
+        :)
+			cmd_line "run command :" "dirs"
+            cd "$PWD" &>/dev/null ||:
+			[[ $cmd_reply ]] &&
+				$cmd_reply &> /dev/null
+			open "$PWD"
 
+        ;;
+        
         # Go to '$HOME'.
         ${FFF_KEY_GO_HOME:='~'})
             open ~
@@ -913,7 +917,7 @@ key() {
             open "$OLDPWD"
         ;;
 
-        # Refresh current dir.
+        # Refresh current dir. F5 to refresh
         ${FFF_KEY_REFRESH:=e})
             open "$PWD"
         ;;
